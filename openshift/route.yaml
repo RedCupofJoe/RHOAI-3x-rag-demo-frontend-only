@@ -1,0 +1,33 @@
+# A Route is OpenShift's friendly HTTPS front door: it gives you a stable *.apps.<cluster> URL for browsers.
+# edge TLS means the cluster terminates HTTPS and talks HTTP to the pod, which keeps the pod config simple.
+apiVersion: route.openshift.io/v1
+# Route is OpenShift-specific; vanilla Kubernetes would use Ingress instead, but Routes are first-class here.
+kind: Route
+metadata:
+  # This name appears in Networking → Routes and becomes part of the default hostname OpenShift generates.
+  name: open-webui
+  # Same namespace as the Service ensures RBAC stays scoped to the open-webui project folder in the console.
+  namespace: open-webui
+  labels:
+    app: open-webui
+spec:
+  # Leave host empty to let OpenShift build the usual apps.<cluster-domain> name automatically for you.
+  # host: open-webui.apps.your-cluster.example.com
+  # to points at the backing Service that should receive traffic after TLS is peeled off at the edge.
+  to:
+    kind: Service
+    # Must match service.yaml's name so traffic lands on the internal Service we defined earlier.
+    name: open-webui
+    # weight 100 means all traffic goes to this single Service (you could split weights for advanced rollouts).
+    weight: 100
+  # port selects which Service port name should receive traffic from this Route object.
+  port:
+    # Forward to the Service port named http (8080) defined in service.yaml.
+    targetPort: http
+  tls:
+    # Edge termination presents a certificate at the router; browsers see HTTPS without extra pod certificates.
+    termination: edge
+    # insecureEdgeTerminationPolicy Redirect sends HTTP visitors to HTTPS for a safer default experience.
+    insecureEdgeTerminationPolicy: Redirect
+  # wildcardPolicy None keeps the hostname exact; turn on wildcards only if your org standard requires it.
+  wildcardPolicy: None

@@ -1,0 +1,103 @@
+# This Deployment is the main instruction set: run the Open WebUI container and wire storage plus secrets to it.
+# OpenShift reads this file and keeps the desired number of copies (pods) running for you.
+apiVersion: apps/v1
+# A Deployment manages ReplicaSets so updates roll out in a controlled, repeatable way.
+kind: Deployment
+metadata:
+  # Friendly name you will see under Workloads → Deployments in the console.
+  name: open-webui
+  namespace: open-webui
+  labels:
+    app: open-webui
+spec:
+  # For a simple UI gateway we usually want exactly one pod so the attached disk is not contested.
+  replicas: 1
+  # selector tells the Deployment which pods it owns (labels must match the template below).
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      # Pod-level security: group ownership for volumes; OpenShift restricted-v2 works well with an explicit fsGroup.
+      securityContext:
+        # This line makes mounted volumes group-writable so user 1001 can read and write database files safely.
+        fsGroup: 1001
+        # seccompProfile RuntimeDefault is the modern, safe default OpenShift expects for restricted policies.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: open-webui
+          # This is the official container image published by the Open WebUI project (updated regularly on the main tag).
+          image: ghcr.io/open-webui/open-webui:main
+          # Because main moves, Always pull ensures you are not stuck on an old cached image on the node.
+          imagePullPolicy: Always
+          # Per-container hardening: run as a normal user, drop Linux capabilities, and forbid privilege escalation.
+          securityContext:
+            # This line tells the process to run as UID 1001 (non-root) to pass OpenShift restricted-v2 checks.
+            runAsUser: 1001
+            # Matching group id keeps file permissions predictable on the attached volume.
+            runAsGroup: 1001
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            # Open WebUI listens on 8080 inside the container; the Service will forward traffic to this port.
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Load every key from the Secret above as an environment variable the application understands.
+          envFrom:
+            - secretRef:
+                name: open-webui-secrets
+          # These environment variables are safe to keep in YAML because they are feature toggles, not passwords.
+          env:
+            # When the process UID is not root, HOME must be writable so Python and embedding caches do not touch /root.
+            - name: HOME
+              value: /app/backend/data
+            # Model server URLs and keys live in the Secret (OPENAI_API_BASE_URLS uses semicolons for multiple endpoints).
+            - name: ENABLE_RAG_WEB_SEARCH
+              # Turning this on lets document/RAG flows optionally reach out to the web for fresher context when configured.
+              value: "True"
+            - name: RAG_EMBEDDING_ENGINE
+              # openai uses your configured OpenAI-compatible API for embeddings; switch to ollama if you expose Ollama instead.
+              value: "openai"
+            # If you prefer local Ollama embeddings, set RAG_EMBEDDING_ENGINE to ollama and provide OLLAMA_BASE_URL in the Secret.
+            - name: ENABLE_PERSISTENT_CONFIG
+              # When true, first-run settings stick in the database; admins can still override later from the UI if they choose.
+              value: "true"
+          volumeMounts:
+            - name: data
+              # This mount path is where Open WebUI stores its SQLite DB and uploads inside the official image.
+              mountPath: /app/backend/data
+          resources:
+            requests:
+              # Requests help the scheduler place the pod on a node with enough free CPU.
+              cpu: 200m
+              # Requests also reserve memory so the UI stays responsive under light load.
+              memory: 1Gi
+            limits:
+              # Limits protect the node from runaway memory use while still allowing typical chat and RAG workloads.
+              memory: 4Gi
+              cpu: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            # Give the Python stack a little time to bind the port before traffic is sent.
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            # Liveness waits longer so a slow model download on first boot does not kill the container too early.
+            initialDelaySeconds: 90
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            # This must match the PVC name from pvc.yaml so the same 10GB disk is attached every time.
+            claimName: open-webui-data

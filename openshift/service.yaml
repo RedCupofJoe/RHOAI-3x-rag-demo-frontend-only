@@ -1,0 +1,29 @@
+# A Service is an internal phone number: other pods (and the Route) reach Open WebUI through this stable name.
+# Traffic stays on the cluster network until a Route deliberately publishes it outside.
+apiVersion: v1
+# Service is the Kubernetes object type that defines stable networking to a set of matching pods.
+kind: Service
+metadata:
+  # DNS inside the cluster will expose this as open-webui.open-webui.svc.cluster.local (name plus namespace).
+  name: open-webui
+  # Namespace keeps this Service next to the Deployment so permissions and quotas stay easy to reason about.
+  namespace: open-webui
+  # Labels mirror the Deployment so humans and automation can filter "everything for Open WebUI" quickly.
+  labels:
+    app: open-webui
+spec:
+  # ClusterIP keeps the app private to the cluster; the Route is the public front door.
+  type: ClusterIP
+  # selector chooses which pods receive traffic; it must match the pod template labels exactly.
+  selector:
+    # Only pods labeled app=open-webui receive traffic from this Service (matches the Deployment template).
+    app: open-webui
+  # ports is a list because a Service could forward several protocols; here we only need plain HTTP to the app.
+  ports:
+    - name: http
+      # Service port is what callers use; targetPort must match the container port (8080) from the Deployment.
+      port: 8080
+      # targetPort can be a number or a name; using 8080 keeps it obvious when reading logs and Routes.
+      targetPort: 8080
+      # TCP is standard HTTP traffic; OpenShift handles TLS later at the Route layer for external users.
+      protocol: TCP

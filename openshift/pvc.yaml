@@ -1,0 +1,25 @@
+# This file asks OpenShift for disk space that survives pod restarts (your chats and settings live here).
+# Open WebUI keeps its database and uploads on this volume so nothing is lost when the app updates.
+apiVersion: v1
+# "PersistentVolumeClaim" means: please reserve a chunk of storage from the cluster and attach it to our app later.
+kind: PersistentVolumeClaim
+metadata:
+  # This name is how other YAML files will refer to this exact piece of storage.
+  name: open-webui-data
+  # Everything for this demo app lives in one project (namespace) so it stays organized in the console.
+  namespace: open-webui
+  # Labels are sticky notes OpenShift uses to filter and find related objects quickly.
+  labels:
+    app: open-webui
+# The spec block describes what kind of storage we need and how big it should be.
+spec:
+  # ReadWriteOnce means one pod at a time may write; that is normal for this database-style workload.
+  accessModes:
+    - ReadWriteOnce
+  # resources.requests is the minimum size we are asking the storage system to carve out for us.
+  resources:
+    requests:
+      # This line tells OpenShift to keep 10GB of disk for the app's "brain" (database and files).
+      storage: 10Gi
+  # If your cluster needs a specific storage class, uncomment the next line and set the name your admin gave you.
+  # storageClassName: managed-csi

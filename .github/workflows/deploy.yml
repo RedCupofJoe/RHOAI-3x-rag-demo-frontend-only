@@ -1,0 +1,57 @@
+# This workflow is a simple robot that logs into your OpenShift cluster and reapplies the openshift/ folder.
+# Keeping it to one transparent "apply" command makes audits easy: what you see in git is what lands on the cluster.
+name: Deploy Open WebUI to OpenShift
+
+# Run when someone pushes to the default branch, or when a human clicks "Run workflow" in GitHub.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # GitHub-hosted Linux runner has curl and tar we use to install the oc command-line tool.
+    runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: this job only needs to read the repository contents for checkout.
+      contents: read
+
+    steps:
+      # Checkout clones your repo so the openshift/*.yaml files exist on the runner filesystem.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The OpenShift CLI (oc) speaks the same language as kubectl but understands Routes and projects.
+      - name: Install OpenShift CLI (oc)
+        run: |
+          set -euo pipefail
+          # This downloads the stable client bundle Red Hat publishes for Linux administrators and CI systems.
+          curl -sL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar xz
+          # Install both oc and kubectl next to each other so either tool is available if we extend the workflow later.
+          sudo install -m 0755 oc kubectl /usr/local/bin/
+          # Print the version once so support logs show exactly which client ran the deployment.
+          oc version --client
+
+      # Login uses a long-lived or scoped token from your cluster; never commit that token into git.
+      - name: Log in to OpenShift
+        env:
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Non-interactive login is required in automation; the server URL is your API URL like https://api.cluster.domain:6443
+          oc login --token="${OPENSHIFT_TOKEN}" --server="${OPENSHIFT_SERVER}"
+
+      # Applying the folder creates or updates every object in one shot, matching what you would run from your laptop.
+      - name: Apply openshift manifests (oc apply -f openshift/)
+        run: |
+          set -euo pipefail
+          # If the project does not exist yet, create it; if it already exists, switch context to it quietly.
+          oc get namespace open-webui >/dev/null 2>&1 || oc new-project open-webui
+          # Selecting the project ensures apply targets the namespace named in each YAML metadata.namespace field.
+          oc project open-webui
+          # This one-liner is the heart of the automation: declarative files become live cluster objects.
+          oc apply -f openshift/
+          # Rollout status waits until the new pod is ready or surfaces a clear error if something is misconfigured.
+          oc rollout status deployment/open-webui --timeout=10m
