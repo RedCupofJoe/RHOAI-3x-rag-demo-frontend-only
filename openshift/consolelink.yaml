@@ -1,0 +1,24 @@
+# A ConsoleLink is a bookmark inside the OpenShift web console—it does not deploy the app by itself.
+# After your Route exists, update spec.href below (or patch it) so the shortcut opens the real Open Web UI URL.
+apiVersion: console.openshift.io/v1
+# ConsoleLink is a cluster-wide custom resource; only cluster administrators can usually create or change it.
+kind: ConsoleLink
+metadata:
+  # This name must be unique across the whole cluster because ConsoleLink is not namespaced.
+  name: open-webui-launch
+# spec tells the console where to show the link and which HTTPS address to open when someone clicks it.
+spec:
+  # This label is the text people see next to the shortcut on the namespace overview page.
+  text: Open Web UI
+  # NamespaceDashboard means the link appears when you open the open-webui project in the console.
+  location: NamespaceDashboard
+  # namespaceDashboard limits the shortcut so it only shows for namespaces that match the selector below.
+  namespaceDashboard:
+    # namespaceSelector picks namespaces by their labels; OpenShift adds this label automatically to every namespace name.
+    namespaceSelector:
+      matchLabels:
+        # This line ties the shortcut to the project named open-webui (the same namespace as your Deployment).
+        kubernetes.io/metadata.name: open-webui
+  # Replace the host with your real Route host from Networking → Routes → open-webui (must stay https://).
+  href: 'https://CHANGE-ME-TO-YOUR-ROUTE-HOST'
+  # applicationMenu is omitted here because we only want the link on the project dashboard, not the global app menu.

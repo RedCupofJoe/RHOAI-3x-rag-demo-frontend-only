@@ -15,6 +15,7 @@ Think of Open WebUI as a **browser window** that sits in front of your AI servic
 | **Route** | A public **https://…apps.&lt;your-cluster&gt;…** address with **edge** TLS so browsers get a padlock without extra certificate work inside the pod. |
 | **PVC (10 Gi)** | Disk space for the app’s database and files so **nothing important disappears** when the pod restarts. |
 | **Secret (template)** | Placeholder storage for **model server URLs** and **API keys** (including support for **several** endpoints at once). |
+| **ConsoleLink (optional)** | A **shortcut inside the OpenShift web console** on the **`open-webui` project overview** that opens the app in a new tab (see below). |
 
 ## Before you start (one-time)
 
@@ -39,11 +40,31 @@ You need the `oc` command and permission to create Deployments, Services, Routes
 ```bash
 oc new-project open-webui   # skip if the project already exists
 oc project open-webui
-oc apply -f openshift/
+# Apply project resources; skip ConsoleLink here unless you use a cluster-admin account (see “Console shortcut” below).
+for f in openshift/*.yaml; do
+  grep -q 'kind: ConsoleLink' "$f" && continue
+  oc apply -f "$f"
+done
 oc rollout status deployment/open-webui --timeout=10m
 ```
 
-Open the **Route** URL under **Networking → Routes** in the OpenShift Console.
+Open the **Route** URL under **Networking → Routes** in the OpenShift Console (copy **Location**), or use the **console shortcut** once it is configured.
+
+## Console shortcut
+
+This is a **link inside the OpenShift web console** (not a second URL for the app itself). OpenShift can show **“Open Web UI”** on the **namespace / project overview** when you select the **`open-webui`** project. That comes from **`openshift/consolelink.yaml`** (`ConsoleLink`).
+
+1. **Who can install it?** Creating a `ConsoleLink` is usually a **cluster-wide** permission. If `oc apply -f openshift/consolelink.yaml` returns **Forbidden**, ask a **cluster administrator** to apply that file (or grant you the right to create `consolelinks.console.openshift.io`).
+2. **Set the real URL.** The template uses a placeholder host. After the Route exists, point the shortcut at it—either edit **`spec.href`** in the YAML and re-apply, or run (from a machine with `oc`):
+
+   ```bash
+   ROUTE_HOST=$(oc get route open-webui -n open-webui -o jsonpath='{.spec.host}')
+   oc patch consolelink open-webui-launch --type=merge -p "{\"spec\":{\"href\":\"https://${ROUTE_HOST}\"}}"
+   ```
+
+3. **Where it appears.** In the web console, open the **Administrator** perspective, choose project **`open-webui`**, and open **Home → Projects → open-webui** (or the project **Overview**). You should see **Open Web UI** linking to your Route.
+
+If the link never appears, confirm the namespace is named exactly **`open-webui`** (the ConsoleLink matches the standard label **`kubernetes.io/metadata.name=open-webui`**, which OpenShift 4.12+ sets automatically).
 
 ## How to update the model URL (OpenShift Console)
 
@@ -75,6 +96,8 @@ Pushes to **`main`** and manual **“Run workflow”** both trigger a deploy.
 
 Your user or service account **lacks RBAC permissions** in the namespace (or cluster). Ask your cluster administrator to grant **edit** or a tailored role that allows **Deployments, Services, Routes, PVCs, and Secrets** in `open-webui`.
 
+**Only for `ConsoleLink`:** If everything else applied but **`consolelink.yaml`** failed, that is normal for a **namespace-only** role. Either skip the console shortcut or have a **cluster admin** apply **`openshift/consolelink.yaml`** and patch **`spec.href`** as described in [Console shortcut](#console-shortcut).
+
 ### “unable to validate against any security context constraint”
 
 The pod’s **securityContext** does not match any **SCC** you are allowed to use. This repo targets **non-root UID 1001** and **restricted-v2**-friendly settings. If it still fails, the administrator may need to allow the service account (often `default` in the namespace) to use **restricted-v2**, or adjust SCC bindings—share the exact error text with them.
@@ -104,7 +127,8 @@ The manifests set **`runAsUser: 1001`** and point **`HOME`** at **`/app/backend/
 - `openshift/route.yaml` — HTTPS Route with edge termination.
 - `openshift/pvc.yaml` — 10 Gi claim for `/app/backend/data`.
 - `openshift/secrets.yaml` — template Secret for URLs and keys.
-- `.github/workflows/deploy.yml` — optional CI deploy using `oc apply`.
+- `openshift/consolelink.yaml` — optional `ConsoleLink` shortcut in the web console (cluster scope; update `spec.href` after the Route exists).
+- `.github/workflows/deploy.yml` — optional CI deploy using `oc apply` (namespace manifests first; ConsoleLink step is best-effort).
 
 ## License and upstream
 
