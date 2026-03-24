@@ -1,12 +1,22 @@
+# SECTION 1: CHANGE STRATEGY TO MIXED
+# This is the "Magic Line" that allows one GPU to be Full and the other to be Sliced.
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu-cluster-policy
+spec:
+  mig:
+    strategy: mixed  # <--- THIS IS THE CHANGE
 ---
-# 1. This tells the driver HOW to slice the cards
+# SECTION 2: THE "DIVIDER" (CONFIGMAP)
+# This defines the "1 Full, 7 Small" layout.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: device-config-h100
+  name: nvidia-mig-configuration
   namespace: nvidia-gpu-operator
 data:
-  h100-split: |
+  h100-mixed-layout: |
     version: v1
     mig-configs:
       all-1full-7small:
@@ -19,7 +29,7 @@ data:
           mig-devices:
             "1g.10gb": 7
 ---
-# 2. This adds the "Full GPU" option to your OpenShift AI menu
+# SECTION 3: OPENSHIFT AI MENU (HARDWARE PROFILES)
 apiVersion: dashboard.opendatahub.io/v1
 kind: HardwareProfile
 metadata:
@@ -27,14 +37,12 @@ metadata:
   namespace: redhat-ods-applications
 spec:
   displayName: "NVIDIA H100 - Full GPU (80GB)"
-  description: "Reserved for OSS-120B model."
   identifiers:
     - identifier: nvidia.com/mig-7g.80gb
       displayName: "80GB Slice"
       minCount: 1
       maxCount: 1
 ---
-# 3. This adds the "Slices" option to your OpenShift AI menu
 apiVersion: dashboard.opendatahub.io/v1
 kind: HardwareProfile
 metadata:
@@ -42,7 +50,6 @@ metadata:
   namespace: redhat-ods-applications
 spec:
   displayName: "NVIDIA H100 - Shared Slice (10GB)"
-  description: "For Granite, Gemma, and Workbenches."
   identifiers:
     - identifier: nvidia.com/mig-1g.10gb
       displayName: "10GB Slice"
