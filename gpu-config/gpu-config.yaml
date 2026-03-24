@@ -1,0 +1,50 @@
+---
+# 1. This tells the driver HOW to slice the cards
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: device-config-h100
+  namespace: nvidia-gpu-operator
+data:
+  h100-split: |
+    version: v1
+    mig-configs:
+      all-1full-7small:
+        - devices: [0]
+          mig-enabled: true
+          mig-devices:
+            "7g.80gb": 1
+        - devices: [1]
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 7
+---
+# 2. This adds the "Full GPU" option to your OpenShift AI menu
+apiVersion: dashboard.opendatahub.io/v1
+kind: HardwareProfile
+metadata:
+  name: h100-full-80gb
+  namespace: redhat-ods-applications
+spec:
+  displayName: "NVIDIA H100 - Full GPU (80GB)"
+  description: "Reserved for OSS-120B model."
+  identifiers:
+    - identifier: nvidia.com/mig-7g.80gb
+      displayName: "80GB Slice"
+      minCount: 1
+      maxCount: 1
+---
+# 3. This adds the "Slices" option to your OpenShift AI menu
+apiVersion: dashboard.opendatahub.io/v1
+kind: HardwareProfile
+metadata:
+  name: h100-slice-10gb
+  namespace: redhat-ods-applications
+spec:
+  displayName: "NVIDIA H100 - Shared Slice (10GB)"
+  description: "For Granite, Gemma, and Workbenches."
+  identifiers:
+    - identifier: nvidia.com/mig-1g.10gb
+      displayName: "10GB Slice"
+      minCount: 1
+      maxCount: 1
